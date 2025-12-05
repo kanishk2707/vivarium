@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VIVARIUM // NEURAL GARDEN</title>
+    <style>
+        /* --- CSS STYLES (iOS / Cyber Aesthetics) --- */
+        :root {
+            --glass: rgba(20, 20, 20, 0.6);
+            --border: rgba(255, 255, 255, 0.1);
+            --neon-green: #00FF99;
+            --neon-red: #FF0055;
+            --neon-blue: #0066FF;
+            --neon-gold: #FFD700;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+            color: white;
+            user-select: none;
+        }
+
+        #canvas-container { position: absolute; top: 0; left: 0; z-index: 0; }
+
+        /* --- UI LAYER --- */
+        .ui-layer {
+            position: absolute; inset: 0; pointer-events: none; z-index: 10;
+            display: flex; flex-direction: column; justify-content: space-between; padding: 25px;
+        }
+
+        .header { display: flex; justify-content: space-between; align-items: center; pointer-events: auto; }
+        
+        h1 {
+            font-size: 1.1rem; letter-spacing: 3px; font-weight: 800; text-transform: uppercase;
+            background: linear-gradient(90deg, #fff, #888); -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            margin: 0;
+        }
+
+        .status-badge {
+            font-size: 0.7rem; padding: 6px 12px; border-radius: 20px;
+            background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+            text-transform: uppercase; letter-spacing: 1px; color: #888;
+            backdrop-filter: blur(10px);
+        }
+        .status-badge.online { color: var(--neon-green); border-color: rgba(0,255,153,0.3); box-shadow: 0 0 10px rgba(0,255,153,0.1); }
+
+        /* --- INPUT AREA --- */
+        .input-wrapper {
+            width: 100%; max-width: 480px; margin: 0 auto 40px auto; pointer-events: auto; position: relative;
+        }
+
+        input {
+            width: 100%; background: var(--glass); border: 1px solid var(--border);
+            border-radius: 24px; padding: 20px 24px; color: white; font-size: 1.1rem;
+            outline: none; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            box-shadow: 0 4px 30px rgba(0,0,0,0.5);
+            box-sizing: border-box;
+        }
+
+        input:focus {
+            border-color: rgba(255,255,255,0.4);
+            box-shadow: 0 0 30px rgba(255,255,255,0.1);
+            transform: scale(1.02);
+        }
+
+        input::placeholder { color: rgba(255,255,255,0.3); font-weight: 300; }
+
+        /* --- LOADING SPINNER --- */
+        .loader {
+            position: absolute; right: 24px; top: 22px; width: 20px; height: 20px;
+            border: 2px solid rgba(255,255,255,0.1); border-top-color: white;
+            border-radius: 50%; animation: spin 0.8s linear infinite; opacity: 0; transition: opacity 0.3s;
+        }
+        .loader.active { opacity: 1; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* --- iOS MODAL SHEET --- */
+        #modal-backdrop {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);
+            z-index: 20; opacity: 0; pointer-events: none; transition: opacity 0.4s;
+        }
+        #modal-backdrop.active { opacity: 1; pointer-events: auto; }
+
+        #details-modal {
+            position: fixed; bottom: 30px; left: 50%; transform: translate(-50%, 110%);
+            width: 90%; max-width: 450px; background: rgba(25, 25, 30, 0.85);
+            backdrop-filter: blur(35px); -webkit-backdrop-filter: blur(35px);
+            border: 1px solid rgba(255,255,255,0.15); border-radius: 32px; padding: 32px;
+            z-index: 21; transition: transform 0.5s cubic-bezier(0.19, 1, 0.22, 1);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+            box-sizing: border-box;
+        }
+        #details-modal.active { transform: translate(-50%, 0); }
+
+        .modal-tag { font-size: 0.7rem; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 12px; opacity: 0.8; font-weight: 700; }
+        .modal-text { font-size: 1.5rem; font-weight: 600; line-height: 1.3; margin-bottom: 30px; letter-spacing: -0.5px; }
+        
+        .btn-group { display: flex; gap: 12px; }
+        .action-btn {
+            flex: 1; padding: 16px; border-radius: 18px; border: none; font-weight: 600; cursor: pointer;
+            transition: transform 0.1s, opacity 0.2s; font-size: 1rem;
+        }
+        .action-btn:active { transform: scale(0.96); }
+        .btn-primary { background: white; color: black; }
+        .btn-primary:hover { opacity: 0.9; }
+        .btn-danger { background: rgba(255, 50, 50, 0.15); color: #ff8888; border: 1px solid rgba(255, 50, 50, 0.2); }
+        .btn-danger:hover { background: rgba(255, 50, 50, 0.25); }
+
+    </style>
+    
+    <script type="importmap">
+        { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+    </script>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+
+    <div class="ui-layer">
+        <div class="header">
+            <h1>Vivarium <span style="font-size:0.5em; opacity:0.5; vertical-align: super;">AI</span></h1>
+            <div class="status-badge" id="ai-status">Neural Link: Standby</div>
+        </div>
+        <div class="input-wrapper">
+            <input type="text" id="thought-input" placeholder="How does your mind feel right now?" autocomplete="off">
+            <div class="loader" id="ai-loader"></div>
+        </div>
+    </div>
+
+    <div id="modal-backdrop"></div>
+    <div id="details-modal">
+        <div class="modal-tag" id="modal-sentiment">ANALYZING...</div>
+        <div class="modal-text" id="modal-text">...</div>
+        <div class="btn-group">
+            <button class="action-btn btn-primary" id="btn-keep">Nurture</button>
+            <button class="action-btn btn-danger" id="btn-burn">Prune</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        // =========================================================================
+        //  ENVIRONMENT CONFIGURATION
+        // =========================================================================
+        const apiKey = ""; // Injected by the environment automatically
+
+        // --- 1. SCENE SETUP ---
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x000000, 0.06); // Atmospheric fog
+
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 3, 14);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.toneMapping = THREE.CineonToneMapping;
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        // --- 2. POST PROCESSING (GLOW) ---
+        const composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+        
+        // Enhance the bloom for the "Neon" look
+        const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+        bloom.strength = 1.3; 
+        bloom.radius = 0.5;
+        bloom.threshold = 0;
+        composer.addPass(bloom);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true; 
+        controls.dampingFactor = 0.05;
+        controls.autoRotate = true; 
+        controls.autoRotateSpeed = 0.4;
+        controls.maxPolarAngle = Math.PI / 1.6; // Don't allow going too far below
+        controls.minDistance = 5;
+        controls.maxDistance = 25;
+
+        // Lighting
+        const ambient = new THREE.AmbientLight(0xffffff, 0.1);
+        const sun = new THREE.DirectionalLight(0xffffff, 2);
+        sun.position.set(10, 10, 5);
+        scene.add(ambient, sun);
+
+        // --- 3. DATA & GROUPS ---
+        let thoughts = [];
+        const connectionsGroup = new THREE.Group(); // Layer for the lines
+        scene.add(connectionsGroup);
+
+        // --- 4. AI LOGIC (GEMINI) ---
+        async function detectEmotion(text) {
+            const modelId = "gemini-2.5-flash-preview-09-2025";
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
+            
+            const prompt = {
+                contents: [{
+                    parts: [{
+                        text: `You are a sentiment engine. Analyze this thought: "${text}". 
+                        Categorize strictly into one of: "anxiety", "sadness", "joy", "focus", "calm".
+                        Determine intensity from 0.1 to 1.0.
+                        Respond ONLY with valid JSON: {"sentiment": "string", "intensity": number}`
+                    }]
+                }]
+            };
+
+            const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+            const retries = 5;
+            const delays = [1000, 2000, 4000, 8000, 16000];
+
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(prompt)
+                    });
+                    
+                    if (!response.ok) {
+                         throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    
+                    // Parse Gemini response (handling potential markdown code blocks)
+                    let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!rawText) throw new Error("No content returned");
+                    
+                    rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+                    return JSON.parse(rawText);
+
+                } catch (e) {
+                    if (i === retries - 1) {
+                         console.error("AI Max Retries Error:", e);
+                         // Fallback
+                         return { sentiment: 'calm', intensity: 0.5 };
+                    }
+                    await delay(delays[i]);
+                }
+            }
+        }
+
+        // --- 5. VISUALIZATION LOGIC ---
+        function createThoughtNode(text, aiData) {
+            const { sentiment, intensity } = aiData;
+            
+            // --- A. SHAPE & COLOR ALCHEMY ---
+            let geo, color, emissive, wireColor;
+            
+            if (sentiment === 'anxiety') {
+                // Sharp, red, erratic
+                geo = new THREE.IcosahedronGeometry(0.6 + (intensity * 0.4), 0);
+                color = 0xFF0044; // Neon Red
+                emissive = 0xFF0000;
+                wireColor = 0xFF9999;
+            } else if (sentiment === 'joy') {
+                // Round, gold, energetic
+                geo = new THREE.OctahedronGeometry(0.6 + (intensity * 0.4), 2);
+                color = 0xFFAA00; // Gold
+                emissive = 0xFF5500;
+                wireColor = 0xFFFFAA;
+            } else if (sentiment === 'sadness') {
+                // Heavy, blue, stable block
+                geo = new THREE.BoxGeometry(0.9, 0.9, 0.9);
+                color = 0x0044FF; // Deep Blue
+                emissive = 0x0011AA;
+                wireColor = 0x5599FF;
+            } else if (sentiment === 'focus') {
+                // Structured, purple, pyramid
+                geo = new THREE.ConeGeometry(0.6, 1.2, 4);
+                color = 0xAA00FF; // Purple
+                emissive = 0x5500FF;
+                wireColor = 0xDD99FF;
+            } else {
+                // Calm, green, torus
+                geo = new THREE.TorusKnotGeometry(0.4, 0.15, 64, 8);
+                color = 0x00FF88; // Teal/Green
+                emissive = 0x00AA44;
+                wireColor = 0xAAFFCC;
+            }
+
+            // --- B. MATERIAL ---
+            const material = new THREE.MeshStandardMaterial({
+                color: color, 
+                emissive: emissive, 
+                emissiveIntensity: 1 + intensity, // Higher intensity = brighter glow
+                roughness: 0.2, 
+                metalness: 0.8,
+            });
+            
+            const mesh = new THREE.Mesh(geo, material);
+            
+            // --- C. POSITIONING (Spherical distribution) ---
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+            const radius = 5 + Math.random() * 5; // Spread between 5 and 10 units
+            
+            mesh.position.set(
+                radius * Math.sin(phi) * Math.cos(theta),
+                radius * Math.sin(phi) * Math.sin(theta),
+                radius * Math.cos(phi)
+            );
+
+            // --- D. CYBER WIREFRAME OVERLAY ---
+            const wireGeo = new THREE.WireframeGeometry(geo);
+            const wireMat = new THREE.LineBasicMaterial({ color: wireColor, transparent: true, opacity: 0.15 });
+            const wire = new THREE.LineSegments(wireGeo, wireMat);
+            mesh.add(wire);
+
+            // --- E. METADATA ---
+            mesh.userData = { 
+                id: Date.now(), 
+                text, 
+                sentiment, 
+                intensity, 
+                color: emissive,
+                rotationSpeed: sentiment === 'anxiety' ? 0.04 : 0.01 // Anxiety spins faster
+            };
+
+            scene.add(mesh);
+            thoughts.push(mesh);
+
+            // --- F. DRAW CONNECTIONS ---
+            drawConstellations();
+        }
+
+        function drawConstellations() {
+            // 1. Clear old lines
+            while(connectionsGroup.children.length > 0){ 
+                const obj = connectionsGroup.children[0];
+                obj.geometry.dispose(); obj.material.dispose();
+                connectionsGroup.remove(obj); 
+            }
+
+            // 2. Group thoughts by sentiment
+            const clusters = {};
+            thoughts.forEach(t => {
+                if(!clusters[t.userData.sentiment]) clusters[t.userData.sentiment] = [];
+                clusters[t.userData.sentiment].push(t.position);
+            });
+
+            // 3. Generate Lines
+            Object.keys(clusters).forEach(sentiment => {
+                const positions = clusters[sentiment];
+                if(positions.length < 2) return; // Need 2 points to make a line
+
+                // Create a continuous line through the cluster
+                const points = [];
+                for(let i=0; i<positions.length; i++) {
+                    points.push(positions[i]);
+                    // If plenty of points, connect back to neighbor to create web
+                    if (i > 0 && Math.random() > 0.5) {
+                        points.push(positions[i-1]);
+                        points.push(positions[i]);
+                    }
+                }
+                // Close loop
+                if (positions.length > 2) {
+                    points.push(positions[0]);
+                }
+
+                const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+                
+                // Color match the line to the emotion
+                let lineColor = 0xffffff;
+                if(sentiment === 'anxiety') lineColor = 0xFF0044;
+                if(sentiment === 'joy') lineColor = 0xFFAA00;
+                if(sentiment === 'sadness') lineColor = 0x0044FF;
+                if(sentiment === 'focus') lineColor = 0xAA00FF;
+                if(sentiment === 'calm') lineColor = 0x00FF88;
+
+                const lineMat = new THREE.LineBasicMaterial({ 
+                    color: lineColor, 
+                    transparent: true, 
+                    opacity: 0.35, // Ghostly connection
+                });
+
+                const line = new THREE.LineSegments(lineGeo, lineMat);
+                connectionsGroup.add(line);
+            });
+        }
+
+        // --- 6. ANIMATION LOOP ---
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            
+            thoughts.forEach(mesh => {
+                // Unique rotation per object
+                mesh.rotation.x += mesh.userData.rotationSpeed;
+                mesh.rotation.y += mesh.userData.rotationSpeed;
+                
+                // Pulsing Animation (Heartbeat)
+                const time = Date.now() * 0.002;
+                const scaleBase = 1;
+                const pulse = Math.sin(time) * (mesh.userData.intensity * 0.1);
+                mesh.scale.set(scaleBase + pulse, scaleBase + pulse, scaleBase + pulse);
+            });
+
+            composer.render();
+        }
+        animate();
+
+        // --- 7. UI INTERACTION ---
+        const input = document.getElementById('thought-input');
+        const loader = document.getElementById('ai-loader');
+        const statusBadge = document.getElementById('ai-status');
+
+        // Confirm System Status
+        statusBadge.innerText = "Neural Link: Active";
+        statusBadge.classList.add('online');
+
+        // Input Handler
+        input.addEventListener('keydown', async (e) => {
+            if (e.key === 'Enter' && input.value.trim() !== "") {
+                const text = input.value;
+                input.value = ""; 
+                input.blur();
+                loader.classList.add('active'); // Show spinner
+
+                // CALL AI
+                const data = await detectEmotion(text);
+                
+                loader.classList.remove('active'); // Hide spinner
+                createThoughtNode(text, data);
+            }
+        });
+
+        // 3D Click Handler (Raycasting)
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2();
+        
+        window.addEventListener('pointerdown', (event) => {
+            // Block clicks on UI elements
+            if(event.target.closest('.ui-layer') || event.target.closest('#details-modal')) return;
+            
+            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+            pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(pointer, camera);
+            
+            const intersects = raycaster.intersectObjects(scene.children, true);
+            
+            if(intersects.length > 0) {
+                // Traverse up to find the group/mesh with data
+                let obj = intersects[0].object;
+                while(obj.parent && obj.parent.type !== 'Scene') {
+                    if (obj.userData.text) break;
+                    obj = obj.parent;
+                }
+                
+                if(obj.userData.text) {
+                    openModal(obj);
+                }
+            } else {
+                closeModal();
+            }
+        });
+
+        // Modal Logic
+        const modal = document.getElementById('details-modal');
+        const backdrop = document.getElementById('modal-backdrop');
+        let selectedMesh = null;
+
+        function openModal(mesh) {
+            selectedMesh = mesh;
+            
+            // Populate Modal
+            const intensityPct = (mesh.userData.intensity * 100).toFixed(0);
+            const sentimentTag = document.getElementById('modal-sentiment');
+            sentimentTag.innerText = `${mesh.userData.sentiment} // INTENSITY ${intensityPct}%`;
+            sentimentTag.style.color = '#' + mesh.userData.color.toString(16).padStart(6, '0');
+            
+            document.getElementById('modal-text').innerText = `"${mesh.userData.text}"`;
+            
+            modal.classList.add('active');
+            backdrop.classList.add('active');
+            controls.autoRotate = false; // Pause rotation for focus
+        }
+
+        function closeModal() {
+            modal.classList.remove('active');
+            backdrop.classList.remove('active');
+            controls.autoRotate = true; // Resume rotation
+        }
+
+        // Button Listeners
+        document.getElementById('btn-burn').addEventListener('click', () => {
+            if(selectedMesh) {
+                // "Burn" effect: Remove from scene
+                scene.remove(selectedMesh);
+                thoughts = thoughts.filter(t => t !== selectedMesh);
+                drawConstellations(); // Re-calculate lines
+                closeModal();
+            }
+        });
+        
+        document.getElementById('btn-keep').addEventListener('click', closeModal);
+        backdrop.addEventListener('click', closeModal);
+
+        // Window Resize Logic
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+            bloom.resolution.set(window.innerWidth, window.innerHeight);
+        });
+
+    </script>
+</body>
+</html>
